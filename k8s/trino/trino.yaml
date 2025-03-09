@@ -1,0 +1,40 @@
+# https://github.com/trinodb/charts/blob/main/charts/trino/values.yaml
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: trino
+  namespace: kube-system
+spec:
+  repo: https://trinodb.github.io/charts
+  chart: trino
+  targetNamespace: trino
+  valuesContent: |
+    server:
+      workers: 1
+    additionalProperties:
+      log.level: INFO
+      logger.io.trino.plugin.iceberg: DEBUG
+      logger.io.trino.plugin.iceberg.catalog.rest: DEBUG
+      logger.io.trino.filesystem.s3.debug: true
+      logger.io.trino.s3.debug: true
+    catalogs:
+      iceberg: |
+        connector.name=iceberg
+        iceberg.catalog.type=rest
+        iceberg.rest-catalog.uri=http://polaris.polaris:8181/api/catalog
+        iceberg.rest-catalog.warehouse=${env:CATALOG_NAME}
+        iceberg.rest-catalog.vended-credentials-enabled=true
+        iceberg.rest-catalog.security=oauth2
+        iceberg.rest-catalog.oauth2.credential=${env:CLIENT_ID}:${env:CLIENT_SECRET}
+        iceberg.rest-catalog.oauth2.scope=${env:OAUTH2_SCOPE}
+        iceberg.rest-catalog.oauth2.server-uri=http://polaris.polaris:8181/api/catalog/v1/oauth/tokens
+        fs.native-s3.enabled=true
+        s3.endpoint=http://localstack.localstack:4566
+        s3.path-style-access=true
+        s3.region=us-east-1
+    service:
+        type: NodePort
+        nodePort: 30080
+    envFrom:
+    - secretRef:
+        name: polaris-principal

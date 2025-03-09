@@ -10,8 +10,12 @@ ports:
   - port: 4566:31566
     nodeFilters:
       - loadbalancer
-  # REST Catalog - polaris 18181 set to port 32181 and it will be accessible via 8181
+  # REST Catalog - polaris 18181 set to port 32181 and it will be accessible via 18181
   - port: 18181:32181
+    nodeFilters:
+      - loadbalancer
+  # Trino DB - trino 8080 set to port 30080 and will be accessibe via 18080 from host
+  - port: 18080:30080
     nodeFilters:
       - loadbalancer
 registries: # define how registries should be created or used

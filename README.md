@@ -1,12 +1,5 @@
 # Apache Polaris Starter Kit with LocalStack on k3s
 
-[![Build Polaris Admin Tool PostgreSQL](https://github.com/Snowflake-Labs/polaris-local-forge/actions/workflows/polaris-admin-tool.yml/badge.svg)](https://github.com/Snowflake-Labs/polaris-local-forge/actions/workflows/polaris-admin-tool.yml)
-[![Build PolarisServer with PostgreSQL](https://github.com/Snowflake-Labs/polaris-local-forge/actions/workflows/polaris-server-image.yml/badge.svg)](https://github.com/Snowflake-Labs/polaris-local-forge/actions/workflows/polaris-server-image.yml)
-![k3d](https://img.shields.io/badge/k3d-v5.6.0-427cc9)
-![Docker Desktop](https://img.shields.io/badge/Docker%20Desktop-v4.27-0db7ed)
-![Apache Polaris](https://img.shields.io/badge/Apache%20Polaris-1.0.0--SNAPSHOT-f9a825)
-![LocalStack](https://img.shields.io/badge/LocalStack-3.0.0-46a831)
-
 This starter kit provides a complete development environment for Apache Polaris with LocalStack integration running on k3s Kubernetes. It includes automated setup of PostgreSQL metastore, S3 integration via LocalStack, and all necessary configurations for immediate development use. The kit uses Kustomize for Kubernetes deployments and provides utilities for secure key generation and credential management.
 
 Key features:
@@ -15,6 +8,7 @@ Key features:
 - Integrated LocalStack for AWS S3 emulation
 - PostgreSQL metastore configuration
 - Ansible Playbooks for setup and configuration
+- Use [trino](https://trino.io) to work with Iceberg
 
 ## Prerequisites
 
@@ -35,8 +29,8 @@ Key features:
 Clone the repository:
 
 ```bash
-git clone https://github.com/snowflake-labs/polaris-local-forge
-cd polaris-local-forge
+git clone https://github.com/kameshsampath/trino-localstack
+cd trino-localstack
 ```
 
 Set up environment variables:
@@ -44,7 +38,7 @@ Set up environment variables:
 ```bash
 export PROJECT_HOME="$PWD"
 export KUBECONFIG="$PWD/.kube/config"
-export K3D_CLUSTER_NAME=polaris-local-forge
+export K3D_CLUSTER_NAME=trino-localstack
 export K3S_VERSION=v1.32.1-k3s1
 export FEATURES_DIR="$PWD/k8s"
 ```
@@ -95,59 +89,6 @@ nameserver 127.0.0.1
 EOF
 ```
 
-## Directory Structure
-
-The project has the following directories and files:
-
-```
-├── LICENSE
-├── README.md
-├── Taskfile.yml
-├── bin
-│   ├── cleanup.sh
-│   └── setup.sh
-├── config
-│   └── cluster-config.yaml
-├── k8s
-│   ├── features
-│   │   ├── adminer.yml
-│   │   └── localstack.yml
-│   └── polaris
-│       ├── bootstrap.yaml
-│       ├── deployment.yaml
-│       ├── kustomization.yaml
-│       ├── purge.yaml
-│       ├── rbac.yaml
-│       ├── sa.yaml
-│       └── service.yaml
-├── notebooks
-│   └── verify_setup.ipynb
-├── polaris-forge-setup
-│   ├── ansible.cfg
-│   ├── catalog_setup.yml
-│   ├── defaults
-│   │   └── main.yml
-│   ├── inventory
-│   │   └── hosts
-│   ├── preapare.yml
-│   └── templates
-│       ├── bootstrap-credentials.env.j2
-│       ├── persistence.xml.j2
-│       ├── polaris.env.j2
-│       └── postgresql.yml.j2
-├── pyproject.toml
-├── uv.lock
-└── work
-```
-
-To ensure reuse and for security, files with passwords are not added to git. Currently, the following files are ignored or not available out of the box (they will be generated in upcoming steps):
-
-- k8s/features/postgresql.yml
-- k8s/polaris/persistence.xml
-- k8s/polaris/.bootstrap-credentials
-- k8s/polaris/.polaris.env
-- All RSA KeyPairs
-
 ### Prepare for Deployment
 
 The following script will generate the required sensitive files from templates using Ansible:
@@ -172,65 +113,8 @@ ansible-playbook  $PROJECT_HOME/polaris-forge-setup/cluster_checks.yml --tags=bo
 
 The cluster will deploy `localstack` and `postgresql`. You can verify them as shown:
 
-#### PostgreSQL
 
-To verify the deployments:
-
-```bash
-kubectl get pods,svc -n polaris
-```
-
-Expected output:
-
-```text
-NAME               READY   STATUS    RESTARTS   AGE
-pod/postgresql-0   1/1     Running   0          76m
-
-NAME                    TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)    AGE
-service/postgresql      ClusterIP   10.43.182.31   <none>        5432/TCP   76m
-service/postgresql-hl   ClusterIP   None           <none>        5432/TCP   76m
-```
-
-```bash
-kubectl get pods,svc -n localstack
-```
-
-Expected output:
-
-```text
-NAME                              READY   STATUS    RESTARTS   AGE
-pod/localstack-86b7f56d7f-hs6vq   1/1     Running   0          76m
-
-NAME                 TYPE       CLUSTER-IP      EXTERNAL-IP   PORT(S)             AGE
-service/localstack   NodePort   10.43.112.185   <none>        4566:31566/TCP,...  76m
-```
-
-### Deploy Polaris
-
-#### Container Images
-
-Currently, Apache Polaris does not publish any official images. The Apache Polaris images used by the repo are available at:
-
-```
-docker pull ghcr.io/snowflake-labs/polaris-local-forge/apache-polaris-server-pgsql
-docker pull ghcr.io/snowflake-labs/polaris-local-forge/apache-polaris-admin-tool-pgsql
-```
-
-The images are built with PostgreSQL as database dependency.
-
-(OR)
-
-The project also has scripts to build them from sources locally.
-
-Run the following command to build Apache Polaris images and push them into the local registry `k3d-registry.localhost:5000`. Update the `IMAGE_REGISTRY` env in [Taskfile](./Taskfile.yml) and then run:
-
-```shell
-task images
-```
-
-When you build locally, please make sure to update the `k8s/polaris/deployment.yaml`, `k8s/polaris/bootstrap.yaml`, and `k8s/polaris/purge.yaml` with correct images.
-
-#### Apply Manifests
+### Deploy Apache Polaris
 
 ```shell
 kubectl apply -k $PROJECT_HOME/k8s/polaris
@@ -242,7 +126,140 @@ Ensure all deployments and jobs have succeeded:
 ansible-playbook  $PROJECT_HOME/polaris-forge-setup/cluster_checks.yml --tags polaris
 ```
 
-#### Purge and Bootstrap
+### Available Services
+
+| Service    | URL                    | Default Credentials                                                                                |
+| ---------- | ---------------------- | -------------------------------------------------------------------------------------------------- |
+| Polaris UI | http://localhost:18181 | $PROJECT_HOME/k8s/polaris/.bootstrap-credentials.env                                               |
+| Adminer    | http://localhost:18080 | PostgreSQL host will be: `postgresql.polaris`, check $FEATURES_DIR/postgresql.yaml for credentials |
+| LocalStack | http://localhost:14566 | Use `test/test` for AWS credentials with Endpoint URL as http://localhost:14566                    |
+
+## Setup Demo Catalog
+
+The Polaris server does not yet have any catalogs. Run the following script to set up your first catalog, principal, principal role, catalog role, and grants.
+
+Next, we will do the following:
+
+- Create s3 bucket
+- Create Catalog named `polardb`
+- Create Principal `root` with Principal Role `admin`
+- Create Catalog Role `sudo`, assign the role to Principal Role `admin`
+- Finally, grant the Catalog Role `sudo` to manage catalog via `CATALOG_MANAGE_CONTENT` role. This will make the principals with role `admin` able to manage the catalog.
+
+Setup the environment variables,
+
+```shell
+# just avoid colliding with existing AWS profiles
+unset AWS_PROFILE
+export AWS_ENDPOINT_URL=http://localstack.localstack:4566
+export AWS_ACCESS_KEY_ID=test
+export AWS_SECRET_ACCESS_KEY=test
+export AWS_REGION=us-east-1
+```
+
+```shell
+ansible-playbook $PROJECT_HOME/polaris-forge-setup/catalog_setup.yml
+```
+
+## Trino 
+
+Create `trino` namespace and Polaris Principal Credentials `polaris-env` secret in it: 
+
+```shell
+ansible-playbook $PROJECT_HOME/polaris-forge-setup/prepare.yml --tags=trino
+```
+
+Deploy Trino
+
+```shell
+kubectl apply -f $PROJECT_HOME/k8s/trino/trino.yaml
+```
+
+Wait for trino pods to be ready,
+
+```shell
+ansible-playbook  $PROJECT_HOME/polaris-forge-setup/cluster_checks.yml --tags=trino
+```
+
+## Verify Setup
+
+### Using Trino 
+
+
+```shell
+trino --server http://localhost:18080 
+```
+
+List all catalogs
+
+```sql
+show catalogs;
+```
+
+```text
+ Catalog 
+---------
+ iceberg 
+ system  
+ tpcds   
+ tpch    
+(4 rows)
+```
+
+Create a schema in `iceberg` named `demo_db`
+
+```sql
+create schema iceberg.demo_db;
+```
+
+Ensure the schema is created,
+
+```sql
+show schemas from iceberg;
+```
+
+Create a table named `fruits` in `iceberg.demo_db`,
+
+```sql
+create table iceberg.demo_db.fruits (
+  id int,
+  name varchar,
+  season varchar
+);
+```
+
+**THIS COMMAND FAILS WITH ERROR**
+
+```text
+Query 20250309_122744_00005_kzjfk failed: Server error: SdkClientException: Unable to execute HTTP request: Connect to polardb.localstack.localstack:4566 [polardb.localstack.localstack/127.0.0.1] failed: Connection refused
+```
+
+### Using notebooks
+
+Generate the Juypter notebook to verify the setup,
+
+```shell
+ansible-playbook  $PROJECT_HOME/polaris-forge-setup/catalog_setup.yml --tags=verify
+```
+
+Run the `$PROJECT_HOME/notebooks/verify_setup.ipynb` to make sure you are able to create the namespace, table, and insert some data.
+
+To double-check if we have all our iceberg files created and committed, open <https://app.localstack.cloud/inst/default/resources/s3/polardb>. You should see something as shown in the screenshots below:
+
+![Localstack](./docs/localstack_view.png)
+
+> **Important**
+> Default Instance URL is updated as shown
+
+![Catalog](./docs/catalog_storage.png)
+![Catalog Metadata](./docs/catalog_metadata.png)
+![Catalog Data](./docs/catalog_data.png)
+
+Your local Apache Polaris environment is ready for use. Please explore it further using or connect it with other query engines/tools like Apache Spark, Trino, Risingwave, etc.
+
+## Troubleshooting
+
+### Polaris Purge and Bootstrap
 
 Whenever there is a need to clean and do bootstrap again, run the following sequence of commands:
 
@@ -294,66 +311,6 @@ service/polaris         LoadBalancer   10.43.202.93   172.19.0.3,172.19.0.4   81
 service/postgresql      ClusterIP      10.43.182.31   <none>                  5432/TCP         100m
 service/postgresql-hl   ClusterIP      None           <none>                  5432/TCP         100m
 ```
-
-### Available Services
-
-| Service    | URL                    | Default Credentials                                                                                |
-| ---------- | ---------------------- | -------------------------------------------------------------------------------------------------- |
-| Polaris UI | http://localhost:18181 | $PROJECT_HOME/k8s/polaris/.bootstrap-credentials.env                                               |
-| Adminer    | http://localhost:18080 | PostgreSQL host will be: `postgresql.polaris`, check $FEATURES_DIR/postgresql.yaml for credentials |
-| LocalStack | http://localhost:14566 | Use `test/test` for AWS credentials with Endpoint URL as http://localhost:14566                    |
-
-## Setup Demo Catalog
-
-The Polaris server does not yet have any catalogs. Run the following script to set up your first catalog, principal, principal role, catalog role, and grants.
-
-Next, we will do the following:
-
-- Create s3 bucket
-- Create Catalog named `polardb`
-- Create Principal `root` with Principal Role `admin`
-- Create Catalog Role `sudo`, assign the role to Principal Role `admin`
-- Finally, grant the Catalog Role `sudo` to manage catalog via `CATALOG_MANAGE_CONTENT` role. This will make the principals with role `admin` able to manage the catalog.
-
-Setup the environment variables,
-
-```shell
-# just avoid colliding with existing AWS profiles
-unset AWS_PROFILE
-export AWS_ENDPOINT_URL=http://localstack.localstack:4566
-export AWS_ACCESS_KEY_ID=test
-export AWS_SECRET_ACCESS_KEY=test
-export AWS_REGION=us-east-1
-```
-
-```shell
-$PROJECT_HOME/polaris-forge-setup/catalog_setup.yml
-```
-
-## Verify Setup
-
-Generate the Juypter notebook to verify the setup,
-
-```shell
-$PROJECT_HOME/polaris-forge-setup/catalog_setup.yml --tags=verify
-```
-
-Run the `$PROJECT_HOME/notebooks/verify_setup.ipynb` to make sure you are able to create the namespace, table, and insert some data.
-
-To double-check if we have all our iceberg files created and committed, open <https://app.localstack.cloud/inst/default/resources/s3/polardb>. You should see something as shown in the screenshots below:
-
-![Localstack](./docs/localstack_view.png)
-
-> **Important**
-> Default Instance URL is updated as shown
-
-![Catalog](./docs/catalog_storage.png)
-![Catalog Metadata](./docs/catalog_metadata.png)
-![Catalog Data](./docs/catalog_data.png)
-
-Your local Apache Polaris environment is ready for use. Please explore it further using or connect it with other query engines/tools like Apache Spark, Trino, Risingwave, etc.
-
-## Troubleshooting
 
 ### Checking Component Logs
 

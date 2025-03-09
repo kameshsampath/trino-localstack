@@ -29,6 +29,7 @@
       delay: 10
       tags:
         - bootstrap
+        - trino
       when: "namespace.tags | intersect(ansible_run_tags) or not ansible_run_tags"
       vars:
         namespace_list:
@@ -36,6 +37,8 @@
             tags: ["bootstrap"]
           - name: polaris
             tags: ["bootstrap"]
+          - name: trino
+            tags: ["trino"]
 
     - name: Wait for Deployments to be ready
       kubernetes.core.k8s_info:
@@ -44,10 +47,10 @@
         namespace: "{{ deployment.namespace }}"
         api_version: "{{ deployment.api_version | default('apps/v1') }}"
       register: resource_status
-      until: resource_status.resources[0].status.availableReplicas is defined and
-        resource_status.resources[0].status.availableReplicas > 0 and
-        resource_status.resources[0].status.readyReplicas is defined and
-        resource_status.resources[0].status.readyReplicas == resource_status.resources[0].status.replicas
+      until:
+        resource_status.resources[0].status.availableReplicas is defined and
+        resource_status.resources[0].status.availableReplicas > 0 and resource_status.resources[0].status.readyReplicas
+        is defined and resource_status.resources[0].status.readyReplicas == resource_status.resources[0].status.replicas
       loop: "{{ deployments_resources_list }}"
       loop_control:
         label: "{{ deployment.namespace }}/{{ deployment.kind }}/{{ deployment.name }}"
@@ -57,6 +60,7 @@
       tags:
         - bootstrap
         - polaris
+        - trino
       when: "deployment.tags | intersect(ansible_run_tags) or not ansible_run_tags"
       vars:
         deployments_resources_list:
@@ -75,6 +79,16 @@
             kind: Deployment
             tags:
               - polaris
+          - name: trino-coordinator
+            namespace: trino
+            kind: Deployment
+            tags:
+              - trino
+          - name: trino-worker
+            namespace: trino
+            kind: Deployment
+            tags:
+              - trino
 
     - name: Wait for Jobs to reach desired state
       kubernetes.core.k8s_info:
@@ -84,8 +98,9 @@
         api_version: batch/v1
       register: job_status
       until: >
-        (job.type == 'completion' and job_status.resources[0].status.succeeded is defined and job_status.resources[0].status.succeeded > 0) or
-        (job.type == 'suspension' and job_status.resources[0].spec.suspend is defined and job_status.resources[0].spec.suspend == true)
+        (job.type == 'completion' and job_status.resources[0].status.succeeded is defined and
+        job_status.resources[0].status.succeeded > 0) or (job.type == 'suspension' and
+        job_status.resources[0].spec.suspend is defined and job_status.resources[0].spec.suspend == true)
       retries: 60
       delay: 10
       loop: "{{ job_resources_list }}"

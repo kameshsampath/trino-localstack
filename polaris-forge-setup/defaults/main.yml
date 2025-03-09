@@ -19,6 +19,7 @@ plf_base_s3_location: "s3://{{ plf_catalog_name }}" # S3 location for catalog st
 plf_admin_username: super_user # Superuser for Polaris
 plf_admin_role: admin # Admin role name
 plf_catalog_role: sudo # Catalog role name
+plf_oauth2_scope: "PRINCIPAL_ROLE:ALL" # default oauth2 scope
 
 # File System Configuration
 plf_work_dir: "{{ playbook_dir }}/../work" # Work directory for storing credentials

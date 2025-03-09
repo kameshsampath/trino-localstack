@@ -27,13 +27,18 @@
       changed_when: false
 
   tasks:
-    - name: Ensure key directory exists with secure permissions
+    - name: Ensure directories exists with secure permissions
       ansible.builtin.file:
-        path: "{{ plf_polaris_dir }}"
+        path: "{{ item }}"
         state: directory
         mode: "0700"
+      loop:
+        - "{{ plf_polaris_dir }}"
+        - "{{ plf_notebook_dir }}"
+        - "{{ plf_work_dir }}"
       tags:
         - rsa
+        - setup
         - setup
 
     - name: Check if RSA keys already exist
@@ -99,9 +104,12 @@
 
     - name: Generate credentials
       ansible.builtin.set_fact:
-        bootstrap_client_id: "{{ lookup('ansible.builtin.password', '/dev/null', chars=['ascii_lowercase', 'digits'], length=8) }}"
-        bootstrap_client_secret: "{{ lookup('ansible.builtin.password', '/dev/null', chars=['ascii_lowercase', 'digits'], length=12) }}"
-        plf_jdbc_password: "{{ lookup('ansible.builtin.password', '/dev/null', chars=['ascii_lowercase', 'digits'], length=12) }}"
+        bootstrap_client_id:
+          "{{ lookup('ansible.builtin.password', '/dev/null', chars=['ascii_lowercase', 'digits'], length=8) }}"
+        bootstrap_client_secret:
+          "{{ lookup('ansible.builtin.password', '/dev/null', chars=['ascii_lowercase', 'digits'], length=12) }}"
+        plf_jdbc_password:
+          "{{ lookup('ansible.builtin.password', '/dev/null', chars=['ascii_lowercase', 'digits'], length=12) }}"
       tags:
         - bootstrap
         - k8s
@@ -136,3 +144,50 @@
       tags:
         - bootstrap
         - k8s
+
+    ## Configure trino to use the catalog env
+    - name: Parse principal credentials
+      ansible.builtin.set_fact:
+        "{{ columns[item|int] }}": "{{ csvline }}"
+      vars:
+        csvline: "{{ lookup('csvfile', plf_realm, file= plf_work_dir~'/principal.txt', delimiter=',', col=item) }}"
+        columns: ["plf_realm", "plf_principal_client_id", "plf_principal_client_secret"]
+      loop: "{{ range(columns | length | int) }}"
+      tags:
+        - trino
+        - debug
+
+    - name: Create Kubernetes namespace {{ plf_trino_namespace | default ('trino') }}
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{  plf_trino_namespace | default ('trino') }}"
+      tags:
+        - trino
+
+    - debug:
+        msg: "{{ reaplf_realmlm }},{{ plf_principal_client_id }}:{{ plf_principal_client_secret }}"
+      tags:
+        - debug
+
+    - name: Create Secret 'polaris-principal' in the namespace {{ plf_trino_namespace | default ('trino') }}
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: polaris-principal
+            namespace: "{{ plf_trino_namespace | default ('trino') }}"
+          type: Opaque
+          stringData:
+            CLIENT_ID: "{{ plf_principal_client_id }}"
+            CLIENT_SECRET: "{{ plf_principal_client_secret }}"
+            REALM: "{{ plf_realm }}"
+            OAUTH2_SCOPE: "{{ plf_oauth2_scope | default('PRINCIPAL_ROLE:ALL') }}"
+            CATALOG_NAME: "{{ plf_catalog_name }}"
+      tags:
+        - trino
